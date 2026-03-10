@@ -19,8 +19,8 @@ import {
 // ========================
 // ГЛОБАЛЬНЫЕ КОНСТАНТЫ
 // ========================
-const SHEET_ID = "1nDB_tgqQNaM_CoElNM29EEHpsEdjLUQJH8HJTHhHT2w";
-const API_KEY = "AIzaSyDxYoaJ5Xc14Day3JkM1r07D1akv-XwFbo";
+const SHEET_ID = import.meta.env.VITE_GOOGLE_SHEETS_ID;
+const API_KEY = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY;
 const SHEET_NAME = "PriceList";
 
 const MIN_INTENSE_HOURS = 20;
