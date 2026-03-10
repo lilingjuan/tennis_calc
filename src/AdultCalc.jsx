@@ -1,67 +1,50 @@
-// src/AdultCalc.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Paper,
   Typography,
   Stack,
   TextField,
-  MenuItem,
   Switch,
   FormControlLabel,
-  RadioGroup,
-  Radio,
   Button,
   Box,
-  Checkbox,
-  Link,
 } from "@mui/material";
 
-// ========================
-// ГЛОБАЛЬНЫЕ КОНСТАНТЫ
-// ========================
-const SHEET_ID = "1nDB_tgqQNaM_CoElNM29EEHpsEdjLUQJH8HJTHhHT2w";
-const API_KEY = "AIzaSyDxYoaJ5Xc14Day3JkM1r07D1akv-XwFbo";
-const SHEET_NAME = "PriceList";
+const SHEET_ID = import.meta.env.VITE_GOOGLE_SHEETS_ID;
+const API_KEY = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY;
+const PRICE_SHEET_NAME = "PriceTable";
+const DISCOUNT_SHEET_CANDIDATES = ["Discounts", "Скидки", "ClientDiscounts"];
 
-const MIN_INTENSE_HOURS = 20;
-const MIN_INTENSE_DAY = 12;
-const MIN_INTENSE_MINI = 4;
+const DISCOUNT_PER_HOUR = 100;
 
-const DISCOUNT_NTRP = 100;
-const ONLINE_UPLIFT = 0.05;
+const TYPE_MAP = {
+  main: { label: "Будни вечер / Выходные", keyHint: "Вечер/Выходные" },
+  day: { label: "Будни день", keyHint: "Будни день" },
+  mini: { label: "Мини-группы (3 чел)", keyHint: "Мини-группа" },
+};
 
-const MIN_PRICE_MAIN = 1600;
-const MIN_PRICE_DAY = 1500;
-const MIN_PRICE_MINI = 2500;
-
-const parseNum = (v) => {
-  if (!v) return 0;
-  const n = parseFloat(String(v).replace(",", "."));
+const parseNum = (value) => {
+  if (value == null || value === "") return 0;
+  const n = parseFloat(String(value).replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 };
-const roundTo50 = (num) => Math.round(num / 50) * 50;
-const roundTo1 = (num) => Math.round(num);
 
-// ========================
-// MAP
-// ========================
-const TYPE_MAP = {
-  main: { label: "Будни вечер / Выходные", minPrice: MIN_PRICE_MAIN },
-  day:  { label: "Будни день",              minPrice: MIN_PRICE_DAY  },
-  mini: { label: "Мини-группы (3 чел)",     minPrice: MIN_PRICE_MINI },
+const parseRange = (label) => {
+  const nums = String(label || "").match(/\d+[.,]?\d*/g) || [];
+  const parsed = nums.map((n) => parseNum(n));
+  if (parsed.length >= 2) return { min: parsed[0], max: parsed[1] };
+  if (parsed.length === 1) return { min: parsed[0], max: parsed[0] };
+  return { min: 0, max: 0 };
 };
 
-// Названия абонементов в прайсе
-const NAME_MAP = {
-  main: ["Минимум", "Базовый", "Стандарт", "Интенсив", "Максимум"],
-  day:  ["Будни день", "Будни день Интенсив"],
-  mini: ["Мини-группа"],
+const normalizePhone = (phone) => String(phone || "").replace(/\D/g, "");
+
+const isTrueCell = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["true", "1", "да", "yes", "y", "✅", "☑", "v"].includes(normalized);
 };
 
-// ========================
-// Компонент блока
-// ========================
-function ServiceBlock({ type, enabled, hours, onToggle, onHoursChange, options, bonusMsg }) {
+function ServiceBlock({ type, enabled, hours, onToggle, onHoursChange }) {
   const meta = TYPE_MAP[type];
 
   return (
@@ -75,63 +58,56 @@ function ServiceBlock({ type, enabled, hours, onToggle, onHoursChange, options, 
       </Stack>
 
       {enabled && (
-        <Stack spacing={1} sx={{ mt: 1 }}>
-          <TextField
-            select
-            fullWidth
-            size="small"
-            label="Часов в мес"
-            value={hours || ""}
-            onChange={(e) => onHoursChange(parseNum(e.target.value))}
-          >
-            {options.map((opt) => (
-              <MenuItem key={opt.hours} value={opt.hours}>
-                {opt.name} — {opt.hours} ч.
-              </MenuItem>
-            ))}
-          </TextField>
-
-          {bonusMsg && (
-            <Typography
-              variant="caption"
-              color={bonusMsg.type === "success" ? "green" : "text.secondary"}
-            >
-              {bonusMsg.text}
-            </Typography>
-          )}
-        </Stack>
+        <TextField
+          fullWidth
+          type="number"
+          size="small"
+          label="Часов в мес"
+          value={hours || ""}
+          inputProps={{ min: 0, step: 0.5 }}
+          onChange={(e) => onHoursChange(parseNum(e.target.value))}
+          sx={{ mt: 1 }}
+        />
       )}
     </Paper>
   );
 }
 
-// ========================
-// AdultCalc
-// ========================
 export default function AdultCalc() {
-  const [priceList, setPriceList] = useState([]);
+  const [priceRows, setPriceRows] = useState([]);
+  const [discountRows, setDiscountRows] = useState([]);
   const [enabled, setEnabled] = useState({ main: false, day: false, mini: false });
   const [hours, setHours] = useState({ main: 0, day: 0, mini: 0 });
-  const [ntrp, setNtrp] = useState(false);
-  const [payMethod, setPayMethod] = useState("cash");
+  const [phone, setPhone] = useState("");
   const [lines, setLines] = useState([]);
   const [total, setTotal] = useState(0);
-  const [waText, setWaText] = useState(null);
-  const [waHref, setWaHref] = useState("#");
+  const [copyText, setCopyText] = useState("");
+  const [copyStatus, setCopyStatus] = useState("");
 
-  // загрузка цен
   useEffect(() => {
     const run = async () => {
       try {
-        const res = await fetch(
-          `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${SHEET_NAME}?key=${API_KEY}`
+        const priceRes = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${PRICE_SHEET_NAME}?key=${API_KEY}`
         );
-        const data = await res.json();
-        const [header, ...rows] = data.values || [];
-        const list = rows.map((row) =>
-          Object.fromEntries(header.map((k, i) => [k, row[i]]))
-        );
-        setPriceList(list);
+        const priceData = await priceRes.json();
+        const [header, ...rows] = priceData.values || [];
+        const parsedPrice = rows.map((row) => Object.fromEntries(header.map((k, i) => [k, row[i]])));
+        setPriceRows(parsedPrice);
+
+        for (const sheetName of DISCOUNT_SHEET_CANDIDATES) {
+          const discountRes = await fetch(
+            `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${sheetName}?key=${API_KEY}`
+          );
+          const discountData = await discountRes.json();
+          if (!discountData.values?.length) continue;
+          const [discountHeader, ...discountDataRows] = discountData.values;
+          const parsedDiscount = discountDataRows.map((row) =>
+            Object.fromEntries(discountHeader.map((k, i) => [k, row[i]]))
+          );
+          setDiscountRows(parsedDiscount);
+          break;
+        }
       } catch (e) {
         console.error(e);
       }
@@ -139,232 +115,144 @@ export default function AdultCalc() {
     run();
   }, []);
 
-  // опции из таблицы
-  const options = useMemo(() => {
-    const build = (names) =>
-      priceList
-        .filter((r) => names.includes((r["Название абонемента"] || "").trim()))
-        .map((r) => ({
-          hours: parseNum(r["Количество, часов"]),
-          name: r["Название абонемента"],
-        }))
-        .filter((o) => o.hours > 0)
-        .sort((a, b) => a.hours - b.hours);
-    return {
-      main: build(NAME_MAP.main),
-      day:  build(NAME_MAP.day),
-      mini: build(NAME_MAP.mini),
-    };
-  }, [priceList]);
+  const parsedTable = useMemo(() => {
+    if (!priceRows.length) return null;
 
-  // бонусные сообщения (как у вас)
-  const bonusMessages = useMemo(() => {
-    const totalHours =
-      (enabled.main ? hours.main : 0) +
-      (enabled.day  ? hours.day  : 0) +
-      (enabled.mini ? hours.mini : 0);
+    const columns = Object.keys(priceRows[0] || {});
+    const totalHoursCol = columns.find((c) => c.includes("Общее кол-во"));
+    const mainCol = columns.find((c) => c.includes(TYPE_MAP.main.keyHint));
+    const dayCol = columns.find((c) => c.includes(TYPE_MAP.day.keyHint));
+    const miniCol = columns.find((c) => c.includes(TYPE_MAP.mini.keyHint));
 
-    if (totalHours >= MIN_INTENSE_HOURS) {
+    const rows = priceRows.map((r) => {
+      const rawRange = r[totalHoursCol] || "";
+      const { min, max } = parseRange(rawRange);
       return {
-        main: { text: `🎾 Мин. цены на все занятия (${MIN_INTENSE_HOURS}+ ч/мес)`, type: "success" },
-        day:  { text: `🎾 Мин. цены на все занятия (${MIN_INTENSE_HOURS}+ ч/мес)`, type: "success" },
-        mini: { text: `🎾 Мин. цены на все занятия (${MIN_INTENSE_HOURS}+ ч/мес)`, type: "success" },
+        rawRange,
+        min,
+        max,
+        prices: {
+          main: parseNum(r[mainCol]),
+          day: parseNum(r[dayCol]),
+          mini: parseNum(r[miniCol]),
+        },
       };
-    }
-    return {
-      main: { text: `🎾 Мин. цена при посещении ${MIN_INTENSE_HOURS}+ ч/мес`, type: "info" },
-      day:  { text: `🌞 Мин. цена при посещении ${MIN_INTENSE_DAY}+ ч/мес`, type: hours.day  >= MIN_INTENSE_DAY  ? "success" : "info" },
-      mini: { text: `👥 Мин. цена при посещении ${MIN_INTENSE_MINI}+ ч/мес`, type: hours.mini >= MIN_INTENSE_MINI ? "success" : "info" },
-    };
-  }, [enabled, hours]);
+    });
 
-  // перерасчёт + сборка итогового текста и WhatsApp
+    const minPriceRow = rows.find((r) => String(r.rawRange).toLowerCase().includes("миним")) || rows[rows.length - 1];
+    return { rows, minPriceRow };
+  }, [priceRows]);
+
   useEffect(() => {
-    if (!priceList.length) return;
-
-    const svcList = [
-      { key: "main", min: MIN_PRICE_MAIN },
-      { key: "day",  min: MIN_PRICE_DAY  },
-      { key: "mini", min: MIN_PRICE_MINI },
-    ];
+    if (!parsedTable) return;
 
     const totalHours =
       (enabled.main ? hours.main : 0) +
-      (enabled.day  ? hours.day  : 0) +
+      (enabled.day ? hours.day : 0) +
       (enabled.mini ? hours.mini : 0);
 
-    let newLines = [];
+    if (!totalHours) {
+      setLines([]);
+      setTotal(0);
+      setCopyText("");
+      return;
+    }
+
+    const band = parsedTable.rows.find((r) => {
+      if (totalHours < 4) return String(r.rawRange).toLowerCase().includes("разов");
+      return totalHours >= r.min && totalHours <= r.max;
+    });
+
+    if (!band) {
+      setLines(["Нет подходящей строки в таблице цен."]);
+      setTotal(0);
+      setCopyText("");
+      return;
+    }
+
+    const normalizedPhone = normalizePhone(phone);
+    const clientRow = discountRows.find((r) => normalizePhone(r.Phone || r.phone) === normalizedPhone);
+    const discountColumns = clientRow ? Object.keys(clientRow).filter((k) => k !== "Name" && k !== "Phone") : [];
+    const discountCount = discountColumns.reduce((acc, col) => acc + (isTrueCell(clientRow[col]) ? 1 : 0), 0);
+    const discountValue = discountCount * DISCOUNT_PER_HOUR;
+    const discountApplied = discountCount > 0;
+
+    const newLines = [];
     let newTotal = 0;
 
-    for (const svc of svcList) {
-      if (!enabled[svc.key] || !hours[svc.key]) continue;
-
-      const row = priceList.find(r =>
-        NAME_MAP[svc.key].includes((r["Название абонемента"] || "").trim()) &&
-        parseNum(r["Количество, часов"]) === hours[svc.key]
-      );
-      if (!row) continue;
-
-      let baseHourly = parseNum(row["PriceCash"]);
-      let hourly = baseHourly;
-
-      // скидка NTRP — только для main и day
-      let ntrpApplied = false;
-      if (ntrp && svc.key !== "mini") {
-        hourly -= DISCOUNT_NTRP;
-        ntrpApplied = true;
-      }
-
-      // минимальные цены
-      let minApplied = false;
-      if (totalHours >= MIN_INTENSE_HOURS) {
-        hourly = svc.min; minApplied = true;
-      } else {
-        if (svc.key === "day"  && hours.day  >= MIN_INTENSE_DAY)  { hourly = svc.min; minApplied = true; }
-        if (svc.key === "mini" && hours.mini >= MIN_INTENSE_MINI) { hourly = svc.min; minApplied = true; }
-        if (hourly < svc.min) { hourly = svc.min; minApplied = true; }
-      }
-
-      // онлайн +5%
-      let onlineApplied = false;
-      if (payMethod === "online") {
-        hourly *= 1 + ONLINE_UPLIFT;
-        onlineApplied = true;
-      }
-
-      const hourlyOut = payMethod === "cash" ? roundTo50(hourly) : roundTo1(hourly);
-      const final = Math.round(hourly * hours[svc.key]);
-
-      newTotal += final;
-
-      // Метки применённых правил
-      const tags = [];
-      if (ntrpApplied && svc.key !== "mini") tags.push("NTRP −100₽");
-      if (minApplied)                        tags.push("мин. цена");
-      if (onlineApplied)                     tags.push("+5% онлайн");
-      const tagStr = tags.length ? ` [${tags.join("; ")}]` : "";
-
+    ["main", "day", "mini"].forEach((key) => {
+      if (!enabled[key] || !hours[key]) return;
+      const baseHourly = band.prices[key];
+      const minHourly = parsedTable.minPriceRow.prices[key];
+      const finalHourly = Math.max(minHourly, baseHourly - discountValue);
+      const sum = Math.round(finalHourly * hours[key]);
+      newTotal += sum;
       newLines.push(
-        `— ${TYPE_MAP[svc.key].label}: ${hours[svc.key]} ч. (${final}₽) ~ ${hourlyOut}₽/ч${tagStr}`
+        `— ${TYPE_MAP[key].label}: ${hours[key]} ч. (${sum}₽) ~ ${finalHourly}₽/ч`
       );
-    }
+    });
+
+    const discountFlag = discountApplied ? "TRUE" : "FALSE";
+    const text = [
+      `Телефон: ${phone || "не указан"}`,
+      `Скидка по телефону: ${discountFlag}`,
+      ...newLines,
+      ``,
+      `ИТОГО: ${newTotal}₽`,
+    ].join("\n");
 
     setLines(newLines);
     setTotal(newTotal);
+    setCopyText(text);
+  }, [parsedTable, discountRows, enabled, hours, phone]);
 
-    if (newLines.length) {
-      const payText = payMethod === "cash" ? "наличными" : "онлайн";
-      const msg = `Здравствуйте, Фёдор! Мне подходит абонемент:\n${newLines.join("\n")}\n\nИТОГО: ${newTotal}₽ (${payText})`;
-      setWaText(msg);
-      setWaHref(`https://wa.me/79500021816?text=${encodeURIComponent(msg)}`);
-    } else {
-      setWaText(null);
-      setWaHref("#");
+  const handleCopy = async () => {
+    if (!copyText) return;
+    try {
+      await navigator.clipboard.writeText(copyText);
+      setCopyStatus("Скопировано в буфер обмена");
+    } catch {
+      setCopyStatus("Не удалось скопировать");
     }
-  }, [priceList, enabled, hours, ntrp, payMethod]);
+  };
 
   return (
     <Box>
-
-      {/* Заголовок */}
-      <Paper
-        elevation={0}
-        sx={{
-          mb: 2,
-          backgroundColor: "transparent",
-          boxShadow: "none",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
+      <Paper elevation={0} sx={{ mb: 2, backgroundColor: "transparent", boxShadow: "none", display: "flex", justifyContent: "center", alignItems: "center" }}>
         <Typography variant="h6">Абонемент во взрослую группу</Typography>
       </Paper>
 
-      {/* Блок со скидкой NTRP */}
       <Paper elevation={1} sx={{ p: 2, borderRadius: 2, mb: 2 }}>
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={ntrp}
-              onChange={(e) => setNtrp(e.target.checked)}
-            />
-          }
-          label={
-            <Typography variant="body2">              
-              Скидка за уровень (кроме Мини-групп)<br />
-            NTRP 4.0+{" "}
-              <Link
-                href="https://rutube.ru/video/4d9f46a66e5b5515d617548f694ae9e9/?r=wd"
-                target="_blank"
-                rel="noopener"
-              >
-                видео 
-              </Link>     
-              &nbsp;/ до 18 лет NTRP 3.5+
-            </Typography>
-          }
+        <Typography variant="subtitle1">Введите свой номер телефона</Typography>
+        <TextField
+          fullWidth
+          size="small"
+          placeholder="Например: 79876543210"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          sx={{ mt: 1 }}
         />
       </Paper>
 
-      {/* Блоки услуг */}
       <Stack spacing={2}>
-        <ServiceBlock
-          type="main"
-          enabled={enabled.main}
-          hours={hours.main}
-          onToggle={(v) => setEnabled((s) => ({ ...s, main: v }))}
-          onHoursChange={(v) => setHours((s) => ({ ...s, main: v }))}
-          options={options.main}
-          bonusMsg={bonusMessages.main}
-        />
-        <ServiceBlock
-          type="day"
-          enabled={enabled.day}
-          hours={hours.day}
-          onToggle={(v) => setEnabled((s) => ({ ...s, day: v }))}
-          onHoursChange={(v) => setHours((s) => ({ ...s, day: v }))}
-          options={options.day}
-          bonusMsg={bonusMessages.day}
-        />
-        <ServiceBlock
-          type="mini"
-          enabled={enabled.mini}
-          hours={hours.mini}
-          onToggle={(v) => setEnabled((s) => ({ ...s, mini: v }))}
-          onHoursChange={(v) => setHours((s) => ({ ...s, mini: v }))}
-          options={options.mini}
-          bonusMsg={bonusMessages.mini}
-        />
+        <ServiceBlock type="main" enabled={enabled.main} hours={hours.main} onToggle={(v) => setEnabled((s) => ({ ...s, main: v }))} onHoursChange={(v) => setHours((s) => ({ ...s, main: v }))} />
+        <ServiceBlock type="day" enabled={enabled.day} hours={hours.day} onToggle={(v) => setEnabled((s) => ({ ...s, day: v }))} onHoursChange={(v) => setHours((s) => ({ ...s, day: v }))} />
+        <ServiceBlock type="mini" enabled={enabled.mini} hours={hours.mini} onToggle={(v) => setEnabled((s) => ({ ...s, mini: v }))} onHoursChange={(v) => setHours((s) => ({ ...s, mini: v }))} />
       </Stack>
 
-      {/* Способ оплаты */}
-      <Paper elevation={1} sx={{ p: 2, borderRadius: 2, mt: 2 }}>
-        <Typography variant="subtitle1">Способ оплаты</Typography>
-        <RadioGroup row value={payMethod} onChange={(e) => setPayMethod(e.target.value)} sx={{ mt: 1 }}>
-          <FormControlLabel value="cash" control={<Radio />} label="💸 Наличными (-5%)" />
-          <FormControlLabel value="online" control={<Radio />} label="💳 Онлайн" />
-        </RadioGroup>
-      </Paper>
-
-      {/* Итог */}
       <Paper elevation={2} sx={{ p: 2, borderRadius: 2, mt: 2 }}>
         <Typography variant="h6">Итого</Typography>
         <Typography variant="body2" sx={{ mt: 1, whiteSpace: "pre-line" }}>
-          {lines.length
-            ? `Оплата составит:\n${lines.join("\n")}\n\nИТОГО: ${total}₽ (${payMethod === "cash" ? "наличными" : "онлайн"})`
-            : "Выберите абонемент."}
+          {lines.length ? `Оплата составит:\n${lines.join("\n")}\n\nИТОГО: ${total}₽` : "Выберите абонемент."}
         </Typography>
-        <Button
-          variant="contained"
-          color="success"
-          sx={{ mt: 1 }}
-          disabled={!waText}
-          href={waHref}
-          target="_blank"
-        >
-          Переслать Админу в WhatsApp
+        <Button variant="contained" sx={{ mt: 2 }} disabled={!copyText} onClick={handleCopy}>
+          Копировать в буфер
         </Button>
+        {copyStatus && (
+          <Typography variant="caption" sx={{ display: "block", mt: 1 }}>
+            {copyStatus}
+          </Typography>
+        )}
       </Paper>
     </Box>
   );

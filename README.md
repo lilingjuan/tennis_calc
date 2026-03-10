@@ -1,16 +1,37 @@
-<<<<<<< HEAD
 # tennis_calc
-=======
-# React + Vite
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Калькулятор теннисных абонементов (взрослый и детский) на React + Vite + MUI.
 
-Currently, two official plugins are available:
+## Возможности
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Переключение между взрослым и детским калькулятором.
+- Загрузка тарифов из Google Sheets.
+- Расчёт итоговой стоимости по выбранным часам и способу оплаты.
+- Формирование готового сообщения в WhatsApp для отправки администратору.
 
-## Expanding the ESLint configuration
+## Установка и запуск
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
->>>>>>> 5a2edb3 (Initial commit)
+```bash
+npm ci
+npm run dev
+```
+
+## Переменные окружения
+
+Создайте `.env` на основе примера:
+
+```bash
+cp .env.example .env
+```
+
+Заполните значения:
+
+- `VITE_GOOGLE_SHEETS_ID` — ID Google Spreadsheet.
+- `VITE_GOOGLE_SHEETS_API_KEY` — API key для Google Sheets API.
+
+## Проверки
+
+```bash
+npm run lint
+npm run build
+```
