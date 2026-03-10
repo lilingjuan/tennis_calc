@@ -10,10 +10,12 @@ import {
   Box,
 } from "@mui/material";
 
+// ========================
+// ГЛОБАЛЬНЫЕ КОНСТАНТЫ
+// ========================
 const SHEET_ID = import.meta.env.VITE_GOOGLE_SHEETS_ID;
 const API_KEY = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY;
-const PRICE_SHEET_NAME = "PriceTable";
-const DISCOUNT_SHEET_CANDIDATES = ["Discounts", "Скидки", "ClientDiscounts"];
+const SHEET_NAME = "PriceList";
 
 const DISCOUNT_PER_HOUR = 100;
 
