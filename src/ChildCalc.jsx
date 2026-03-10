@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+// src/ChildCalc.jsx
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Box,
   Typography,
@@ -9,8 +10,7 @@ import {
 
 const SHEET_ID = import.meta.env.VITE_GOOGLE_SHEETS_ID;
 const API_KEY = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY;
-const DISCOUNT_SHEET_CANDIDATES = ["Discounts", "Скидки", "ClientDiscounts"];
-const DISCOUNT_PER_HOUR = 100;
+const SHEET_NAME = "ChildPrice";
 
 const parseNum = (value) => {
   if (value == null || value === "") return 0;
@@ -46,7 +46,7 @@ export default function ChildCalc() {
     const run = async () => {
       try {
         const priceRes = await fetch(
-          `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/PriceTable?key=${API_KEY}`
+          `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${PRICE_SHEET_NAME}?key=${API_KEY}`
         );
         const priceData = await priceRes.json();
         const [header, ...rows] = priceData.values || [];
@@ -74,27 +74,10 @@ export default function ChildCalc() {
     run();
   }, []);
 
-  const parsedTable = useMemo(() => {
-    if (!priceRows.length) return null;
-
-    const columns = Object.keys(priceRows[0] || {});
-    const totalHoursCol = columns.find((c) => c.includes("Общее кол-во"));
-    const childCol = columns.find((c) => c.includes("Детские"));
-
-    const rows = priceRows.map((r) => {
-      const rawRange = r[totalHoursCol] || "";
-      const { min, max } = parseRange(rawRange);
-      return {
-        rawRange,
-        min,
-        max,
-        childPrice: parseNum(r[childCol]),
-      };
-    });
-
-    const minPriceRow = rows.find((r) => String(r.rawRange).toLowerCase().includes("миним")) || rows[rows.length - 1];
-    return { rows, minPriceRow };
-  }, [priceRows]);
+  // Поиск тарифа по часам
+  const findRate = useCallback((h) => {
+    return priceList.find((row) => parseNum(row["Количество, часов"]) === h);
+  }, [priceList]);
 
   useEffect(() => {
     if (!parsedTable) return;
@@ -121,18 +104,21 @@ export default function ChildCalc() {
 
     const text = `Телефон: ${phone || "не указан"}\nСкидка по телефону: ${discountFlag}\nДетский абонемент: ${hours} ч. (${total}₽, ${hourly}₽/ч)\n\nИТОГО: ${total}₽`;
     setResultText(text);
-    setCopyText(text);
-  }, [hours, parsedTable, discountRows, phone]);
 
-  const handleCopy = async () => {
-    if (!copyText) return;
-    try {
-      await navigator.clipboard.writeText(copyText);
-      setCopyStatus("Скопировано в буфер обмена");
-    } catch {
-      setCopyStatus("Не удалось скопировать");
-    }
-  };
+    // WhatsApp сообщение
+    const waText =
+      payMethod === "cash"
+        ? `Здравствуйте, Фёдор! Меня интересует детский абонемент:\n${lines.join(
+            "\n"
+          )}\nИТОГО: ${total}₽ (наличными можно оплатить тренеру).`
+        : `Здравствуйте, Фёдор! Меня интересует детский абонемент:\n${lines.join(
+            "\n"
+          )}\nИТОГО: ${total}₽ (онлайн)\nПрошу выслать ссылку для оплаты.`;
+
+    setWaLink(
+      `https://wa.me/79500021816?text=${encodeURIComponent(waText)}`
+    );
+  }, [findRate, hours, payMethod, priceList]);
 
   return (
     <Box>

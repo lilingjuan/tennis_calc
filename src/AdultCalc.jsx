@@ -10,9 +10,12 @@ import {
   Box,
 } from "@mui/material";
 
+// ========================
+// ГЛОБАЛЬНЫЕ КОНСТАНТЫ
+// ========================
 const SHEET_ID = import.meta.env.VITE_GOOGLE_SHEETS_ID;
 const API_KEY = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY;
-const DISCOUNT_SHEET_CANDIDATES = ["Discounts", "Скидки", "ClientDiscounts"];
+const SHEET_NAME = "PriceList";
 
 const DISCOUNT_PER_HOUR = 100;
 
@@ -87,7 +90,7 @@ export default function AdultCalc() {
     const run = async () => {
       try {
         const priceRes = await fetch(
-          `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/PriceTable?key=${API_KEY}`
+          `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${PRICE_SHEET_NAME}?key=${API_KEY}`
         );
         const priceData = await priceRes.json();
         const [header, ...rows] = priceData.values || [];
