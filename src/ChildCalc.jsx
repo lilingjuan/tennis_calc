@@ -1,5 +1,5 @@
 // src/ChildCalc.jsx
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Box,
   Typography,
@@ -12,8 +12,8 @@ import {
   Paper,
 } from "@mui/material";
 
-const SHEET_ID = "1nDB_tgqQNaM_CoElNM29EEHpsEdjLUQJH8HJTHhHT2w";
-const API_KEY = "AIzaSyDxYoaJ5Xc14Day3JkM1r07D1akv-XwFbo";
+const SHEET_ID = import.meta.env.VITE_GOOGLE_SHEETS_ID;
+const API_KEY = import.meta.env.VITE_GOOGLE_SHEETS_API_KEY;
 const SHEET_NAME = "ChildPrice";
 
 const HOURS = [4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -51,9 +51,9 @@ export default function ChildCalc() {
   }, []);
 
   // Поиск тарифа по часам
-  const findRate = (h) => {
+  const findRate = useCallback((h) => {
     return priceList.find((row) => parseNum(row["Количество, часов"]) === h);
-  };
+  }, [priceList]);
 
   // Пересчёт цены
   useEffect(() => {
@@ -96,7 +96,7 @@ export default function ChildCalc() {
     setWaLink(
       `https://wa.me/79500021816?text=${encodeURIComponent(waText)}`
     );
-  }, [hours, payMethod, priceList]);
+  }, [findRate, hours, payMethod, priceList]);
 
   return (
     <Box>
